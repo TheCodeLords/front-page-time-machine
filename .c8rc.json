@@ -1,0 +1,12 @@
+{
+  "all": true,
+  "include": ["src/**/*.ts"],
+  "//exclude": "src/cli is the terminal entry point — argv parsing and console.log around logic that is covered directly. Counting it would let real gaps hide behind print statements.",
+  "exclude": ["src/**/*.spec.ts", "src/cli/**"],
+  "reporter": ["text-summary"],
+  "check-coverage": true,
+  "lines": 80,
+  "functions": 80,
+  "branches": 75,
+  "statements": 80
+}

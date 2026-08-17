@@ -1,0 +1,1 @@
+Extract the headline, article URL, section, and position of every news story on this homepage.

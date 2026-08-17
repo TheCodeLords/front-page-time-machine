@@ -1,0 +1,70 @@
+# Al Jazeera Media Network content is made available for your personal, non-commercial 
+# use subject to our Terms and Conditions: 
+# https://www.aljazeera.com/terms-and-conditions/
+# Any other uses are not permitted, including but not limited to:
+# (1) the development of any software, machine learning, artificial intelligence (AI),
+# and/or large language models (LLMs); 
+# (2) text and data mining activities;
+# (3) creating or providing archived or cached data sets containing our content to others; and/or
+# (4) any commercial purposes.
+# Use of any device, tool, or process designed to data mine or scrape the content
+# using automated means is prohibited without prior written permission from 
+# Al Jazeera Media Network. Contact https://network.aljazeera.net/en/contact for assistance.
+
+User-agent: *
+Disallow: /api
+Disallow: /asset-manifest.json
+Allow: /search/$
+Disallow: /search/
+Disallow: /home/search?q=
+Disallow: /*/liveblog/*?*update=*
+Disallow: /*?gb=
+Disallow: /*&gb=
+Disallow: /*?traffic_source=
+Disallow: /*&traffic_source=
+Disallow: /*?fbclid=
+Disallow: /*&fbclid=
+Disallow: /*?q=
+Disallow: /*&q=
+Disallow: /*?playlist=
+Disallow: /*&playlist=
+
+# Allow Rules
+
+User-agent: AmazonAdBot
+Allow: /
+
+# Disallow Rules
+
+User-agent: anthropic-ai
+Disallow: / 
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: / 
+
+User-agent: Claude-Web
+Disallow: /
+
+User-agent: cohere-ai
+Disallow: / 
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: PerplexityBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+
+# Sitemaps
+
+Sitemap: https://www.aljazeera.com/news-sitemap.xml 
+Sitemap: https://www.aljazeera.com/sitemaps/article-archive.xml
+Sitemap: https://www.aljazeera.com/sitemaps/article-new.xml
+Sitemap: https://www.aljazeera.com/sitemaps/video-archive.xml
+Sitemap: https://www.aljazeera.com/sitemaps/video-new.xml

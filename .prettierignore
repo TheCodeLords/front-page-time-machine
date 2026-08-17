@@ -1,0 +1,9 @@
+# Generated output — `npm run timeline` writes it; reformatting a build artifact just makes the
+# next regeneration fail format:check.
+timeline.html
+
+# Cloned upstream repos, not ours to format.
+vendor/
+
+# The archive itself.
+snapshots/

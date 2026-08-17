@@ -1,0 +1,24 @@
+# secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# dependencies
+node_modules/
+
+# runtime artifacts
+# NOTE: snapshots/ is deliberately NOT ignored — the captured archive (public news metadata, <1MB)
+# is the product's evidence, and README links into snapshots/_quarantine/. Screenshots stay out:
+# 48MB of PNG receipts that the archive lines already reference by path.
+screenshots/
+output/
+reports/
+scratch/
+*.log
+
+# coverage
+coverage/
+.nyc_output/
+
+# cloned reference repos (not ours to vendor into the submission)
+vendor/

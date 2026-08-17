@@ -1,0 +1,279 @@
+<title>The Meridian Dispatch</title>
+<style>
+  /* Synthetic newsprint — single deliberate look, every color painted explicitly. */
+  body {
+    background: #f2f4f3;
+    color: #14181a;
+    font:
+      16px/1.5 Georgia,
+      'Times New Roman',
+      serif;
+    margin: 0;
+  }
+  .ribbon {
+    background: #8a6d2f;
+    color: #f2f4f3;
+    text-align: center;
+    font:
+      700 12px/2.2 'Trebuchet MS',
+      sans-serif;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .sheet {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 1.2rem 1.4rem 2rem;
+  }
+  .masthead {
+    text-align: center;
+    border-bottom: 4px double #14181a;
+    padding: 1.1rem 0 0.7rem;
+  }
+  .masthead h1 {
+    font-size: 2.6rem;
+    margin: 0;
+    letter-spacing: 0.04em;
+  }
+  .masthead .dateline {
+    font:
+      12px/2 'Courier New',
+      monospace;
+    color: #4a5254;
+  }
+  nav {
+    display: flex;
+    justify-content: center;
+    gap: 1.4rem;
+    border-bottom: 1px solid #c9cfcc;
+    padding: 0.45rem 0;
+    font:
+      13px/1 'Trebuchet MS',
+      sans-serif;
+  }
+  nav a {
+    color: #2c5f77;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .hero {
+    border-bottom: 1px solid #c9cfcc;
+    padding: 1.2rem 0;
+  }
+  .hero .kicker {
+    font:
+      700 12px/1 'Trebuchet MS',
+      sans-serif;
+    color: #8a6d2f;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .hero h2 {
+    font-size: 1.9rem;
+    margin: 0.3rem 0;
+  }
+  .hero h2 a {
+    color: #14181a;
+    text-decoration: none;
+  }
+  .hero .standfirst {
+    color: #4a5254;
+    font-style: italic;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 2rem;
+  }
+  .story-card {
+    border-bottom: 1px solid #c9cfcc;
+    padding: 0.85rem 0;
+  }
+  .story-card .section-tag {
+    font:
+      700 11px/1 'Trebuchet MS',
+      sans-serif;
+    color: #2c5f77;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .story-card h3 {
+    font-size: 1.08rem;
+    margin: 0.25rem 0;
+  }
+  .story-card h3 a.headline-link {
+    color: #14181a;
+    text-decoration: none;
+  }
+  .story-card time {
+    font:
+      11px/1 'Courier New',
+      monospace;
+    color: #4a5254;
+  }
+  .briefs {
+    border-top: 3px solid #14181a;
+    margin-top: 1rem;
+    padding-top: 0.6rem;
+  }
+  .briefs h4 {
+    font:
+      700 13px/1 'Trebuchet MS',
+      sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 0 0 0.4rem;
+  }
+  .briefs li {
+    margin: 0.3rem 0;
+  }
+  .briefs a {
+    color: #14181a;
+  }
+  footer {
+    border-top: 1px solid #c9cfcc;
+    margin-top: 1.6rem;
+    padding-top: 0.8rem;
+    font:
+      12px/1.7 'Trebuchet MS',
+      sans-serif;
+    color: #4a5254;
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+  }
+  footer a {
+    color: #4a5254;
+  }
+</style>
+<div class="ribbon">
+  Synthetic test fixture — fictional publication, fictional places, built to exercise a self-healing
+  scraper
+</div>
+<div class="sheet">
+  <header class="masthead">
+    <h1>The Meridian Dispatch</h1>
+    <div class="dateline">MERIDIAN BASIN EDITION · LAYOUT V1</div>
+  </header>
+  <nav>
+    <a href="/basin">Basin</a><a href="/harbour">Harbour</a><a href="/commerce">Commerce</a
+    ><a href="/weather">Weather</a><a href="/archive">Archive</a>
+  </nav>
+
+  <article class="hero">
+    <span class="kicker">Lead story</span>
+    <h2>
+      <a href="/basin/reservoir-commission-approves-winter-drawdown"
+        >Reservoir commission approves winter drawdown after third dry season</a
+      >
+    </h2>
+    <p class="standfirst">
+      Engineers say the staged release protects the lower weirs; growers call the timetable
+      optimistic.
+    </p>
+    <time datetime="2026-08-17T06:40:00Z">06:40</time>
+  </article>
+
+  <div class="grid">
+    <article class="story-card">
+      <span class="section-tag">Harbour</span>
+      <h3>
+        <a class="headline-link" href="/harbour/pilot-boat-fleet-refit-completed"
+          >Pilot boat fleet refit completed two weeks ahead of schedule</a
+        >
+      </h3>
+      <time datetime="2026-08-17T06:10:00Z">06:10</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Commerce</span>
+      <h3>
+        <a class="headline-link" href="/commerce/grain-terminal-reports-record-quarter"
+          >Grain terminal reports record quarter despite rail slowdown</a
+        >
+      </h3>
+      <time datetime="2026-08-17T05:55:00Z">05:55</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Basin</span>
+      <h3>
+        <a class="headline-link" href="/basin/kestrel-bay-ferry-timetable-revised"
+          >Kestrel Bay ferry timetable revised for shoulder season</a
+        >
+      </h3>
+      <time datetime="2026-08-17T05:30:00Z">05:30</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Civic</span>
+      <h3>
+        <a class="headline-link" href="/civic/port-alder-council-backs-library-annex"
+          >Port Alder council backs library annex on second reading</a
+        >
+      </h3>
+      <time datetime="2026-08-17T05:05:00Z">05:05</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Weather</span>
+      <h3>
+        <a class="headline-link" href="/weather/fog-bank-expected-to-lift-by-midmorning"
+          >Fog bank expected to lift by mid-morning, gales offshore</a
+        >
+      </h3>
+      <time datetime="2026-08-17T04:50:00Z">04:50</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Commerce</span>
+      <h3>
+        <a class="headline-link" href="/commerce/cannery-row-leases-draw-nine-bidders"
+          >Cannery Row leases draw nine bidders at auction</a
+        >
+      </h3>
+      <time datetime="2026-08-17T04:20:00Z">04:20</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Basin</span>
+      <h3>
+        <a class="headline-link" href="/basin/survey-finds-eelgrass-recovery-in-south-channel"
+          >Survey finds eelgrass recovery in the south channel</a
+        >
+      </h3>
+      <time datetime="2026-08-17T03:58:00Z">03:58</time>
+    </article>
+    <article class="story-card">
+      <span class="section-tag">Civic</span>
+      <h3>
+        <a class="headline-link" href="/civic/bridge-toll-holiday-extended-to-october"
+          >Bridge toll holiday extended to October</a
+        >
+      </h3>
+      <time datetime="2026-08-17T03:31:00Z">03:31</time>
+    </article>
+  </div>
+
+  <section class="briefs">
+    <h4>Wire briefs</h4>
+    <ul>
+      <li>
+        <a href="/briefs/lighthouse-lens-cleaning-friday"
+          >Lighthouse lens cleaning closes headland path Friday</a
+        >
+      </li>
+      <li>
+        <a href="/briefs/night-market-returns-to-quay-six"
+          >Night market returns to Quay Six this weekend</a
+        >
+      </li>
+      <li>
+        <a href="/briefs/dredger-meridian-due-in-port">Dredger “Meridian” due in port Tuesday</a>
+      </li>
+    </ul>
+  </section>
+
+  <footer>
+    <a href="/about">About</a><a href="/contact">Contact</a><a href="/terms">Terms</a>
+    <span
+      >All places, mastheads and stories on this page are fictional. This page exists so a scraper
+      can break against it safely.</span
+    >
+  </footer>
+</div>

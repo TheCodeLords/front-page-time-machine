@@ -1,0 +1,58 @@
+{
+  "collector_id": "c_msx6cy0m2aeyu3sc1z",
+  "status": "awaiting_approval",
+  "completed_steps": [
+    "planner",
+    "control_preview_runner",
+    "code_fixer",
+    "step_preview_runner",
+    "request_fulfillment_validator",
+    "css_selector_extractor",
+    "code_fixer",
+    "step_preview_runner",
+    "request_fulfillment_validator",
+    "step_advance",
+    "control_preview_runner",
+    "code_fixer",
+    "step_preview_runner",
+    "request_fulfillment_validator",
+    "css_selector_extractor",
+    "code_fixer",
+    "step_preview_runner",
+    "request_fulfillment_validator",
+    "css_selector_extractor",
+    "code_fixer",
+    "step_preview_runner",
+    "request_fulfillment_validator",
+    "step_advance"
+  ],
+  "prompt": "The output is missing several fields. For each story also return summary with the teaser text shown on the homepage, image_url with the absolute URL of the story thumbnail image, and story_type set to video, live, update or article. Also include the time of day alongside the publish date, not just the date, so stories can be ordered within a day. Keep every existing output field exactly as it is named now.",
+  "view_url": "https://brightdata.com/cp/scrapers/c_msx6cy0m2aeyu3sc1z",
+  "next_step": "bdata scraper approve c_msx6cy0m2aeyu3sc1z --url https://www.npr.org",
+  "preview_result": [
+    {
+      "headline": "Meta heads to court in a landmark trial about kids and social media addiction",
+      "section": "Business",
+      "publish_date": {},
+      "author": "John Ruwitch",
+      "related_stories": [
+        {
+          "headline": "Technology Jury finds Meta and Google negligent in social media harms trial",
+          "url": "https://www.npr.org/sections/technology/",
+          "section": "Technology"
+        },
+        {
+          "headline": "Technology Verdicts against Meta and Google may bring a new era of big tech accountability",
+          "url": "https://www.npr.org/sections/technology/",
+          "section": "Technology"
+        },
+        "4 more items"
+      ],
+      "product_page_url": "https://www.npr.org/2026/08/17/nx-s1-5930701/meta-trial-kids-social-media-addiction",
+      "summary": "Four states are suing the parent company of Faceb... kids and that Meta hid the mental health risks.",
+      "image_url": "https://npr.brightspotcdn.com/dims3/default/strip...93baabbc494f357f4be%2Fgettyimages-1236190685.jpg",
+      "story_type": "article"
+    }
+  ],
+  "diff_summary": "proposed template has 2 step(s) — review at view_url"
+}
