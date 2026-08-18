@@ -16,6 +16,13 @@ export const OutletSchema = z.object({
   homepage_url: z.string().url(),
   /** Assigned by `brightdata scraper create`. Null until the collector exists. */
   collector_id: z.string().nullable(),
+  /**
+   * True for the redesign-drill fixture. Synthetic outlets can be captured, watched and healed like
+   * any other — that is the drill — but the analysis commands (`story`, `timeline` news cards)
+   * exclude them, so fixture stories can never blend into the real archive's findings. The drill's
+   * repair episode still appears in the Repairs panel, clearly named as the fixture.
+   */
+  synthetic: z.boolean().default(false),
   notes: z.string().optional(),
 });
 export type Outlet = z.infer<typeof OutletSchema>;
@@ -28,6 +35,7 @@ export const DEFAULT_OUTLETS: Outlet[] = [
     source_name: 'NPR',
     homepage_url: 'https://www.npr.org',
     collector_id: null,
+    synthetic: false,
     notes: 'Cleanest semantic HTML of the set — build and validate the collector here first.',
   },
   {
@@ -35,6 +43,7 @@ export const DEFAULT_OUTLETS: Outlet[] = [
     source_name: 'BBC News',
     homepage_url: 'https://www.bbc.com/news',
     collector_id: null,
+    synthetic: false,
     notes: 'Dense card grid. Pin .com, not .co.uk — they are different front pages.',
   },
   {
@@ -42,6 +51,7 @@ export const DEFAULT_OUTLETS: Outlet[] = [
     source_name: 'CNN',
     homepage_url: 'https://edition.cnn.com',
     collector_id: null,
+    synthetic: false,
     notes: 'Heavy JS zones. Edition pinned to International.',
   },
   {
@@ -49,6 +59,7 @@ export const DEFAULT_OUTLETS: Outlet[] = [
     source_name: 'Fox News',
     homepage_url: 'https://www.foxnews.com',
     collector_id: null,
+    synthetic: false,
     notes: 'Large lead slot above a classic list.',
   },
   {
@@ -56,6 +67,7 @@ export const DEFAULT_OUTLETS: Outlet[] = [
     source_name: 'Al Jazeera',
     homepage_url: 'https://www.aljazeera.com',
     collector_id: null,
+    synthetic: false,
     notes: 'Different DOM idiom again — good stress test for one shared description.',
   },
   {
@@ -63,7 +75,18 @@ export const DEFAULT_OUTLETS: Outlet[] = [
     source_name: 'The Guardian',
     homepage_url: 'https://www.theguardian.com/international',
     collector_id: null,
+    synthetic: false,
     notes: 'Very dense grid, many labelled sections. Edition pinned to International.',
+  },
+  {
+    source: 'meridian',
+    source_name: 'The Meridian Dispatch (fixture)',
+    homepage_url: 'https://thecodelords.github.io/front-page-time-machine/mock/homepage-v1.html',
+    collector_id: null,
+    synthetic: true,
+    notes:
+      'The controlled-redesign drill (mock/README.md). Inert until FPTM_COLLECTORS assigns it a ' +
+      'collector; excluded from story/timeline analysis so fixture data never blends into the news.',
   },
 ];
 

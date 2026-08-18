@@ -27,6 +27,8 @@ export interface CaptureOptions {
   screenshotDir?: string | null;
   runner?: CommandRunner;
   thresholds?: HealthThresholds;
+  /** The tick boundary this capture belongs to, recorded so the archive knows its capture window. */
+  scheduledFor?: string | null;
   /** Injected for deterministic tests. */
   now?: () => string;
   newCaptureId?: () => string;
@@ -56,6 +58,9 @@ export async function captureOutlet(
   const rawRecords = await runCollector(outlet.collector_id, outlet.homepage_url, {
     ...(options.runner ? { runner: options.runner } : {}),
   });
+  // The observation ends when the collector returns; the screenshot below is a receipt, not part of
+  // the observation window. captured_at (start) → capture_completed_at bounds what "as of" means.
+  const captureCompletedAt = now();
 
   // The screenshot is the receipt, not the record. If it fails we still keep the capture and report
   // the failure — losing an hour of history over a PNG would be an absurd trade.
@@ -68,7 +73,9 @@ export async function captureOutlet(
       await captureScreenshot(outlet.homepage_url, target, {
         ...(options.runner ? { runner: options.runner } : {}),
       });
-      screenshotPath = target;
+      // Stored with forward slashes: the path is DATA in a cross-platform archive, and a snapshot
+      // written on Windows must not carry backslashes into a reader on anything else.
+      screenshotPath = target.split(path.sep).join('/');
     } catch (error) {
       screenshotError = error instanceof Error ? error.message : String(error);
     }
@@ -83,7 +90,12 @@ export async function captureOutlet(
       captured_at: capturedAt,
       capture_id: newCaptureId(),
     },
-    { collector_id: outlet.collector_id, screenshot_path: screenshotPath },
+    {
+      collector_id: outlet.collector_id,
+      screenshot_path: screenshotPath,
+      scheduled_for: options.scheduledFor ?? null,
+      capture_completed_at: captureCompletedAt,
+    },
   );
 
   const thresholds = options.thresholds ?? DEFAULT_THRESHOLDS;

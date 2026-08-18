@@ -119,6 +119,26 @@ const FILLER_SUBJECTS = [
 ];
 
 /**
+ * Subjects reserved for the ROTATING filler slots, disjoint from the standing pool.
+ *
+ * Found on stage, or nearly: the rotating slots used to draw from the same pool as the standing
+ * ones, so "Farmers report early harvest yields" could exit one URL and re-enter under another in
+ * the same hour — and Scene 2's diff printed the same headline as both NEW and REMOVED. Correct
+ * URL-keyed behavior, broken optics, in the one scene whose job is to demonstrate the diff. With a
+ * disjoint pool and indices that step by two per hour, adjacent hours can never reuse a subject
+ * (index differences of 1–3 are never ≡ 0 mod a pool of ≥4), so a diff never contradicts itself.
+ */
+const ROTATING_SUBJECTS = [
+  'Night market extends riverside season',
+  'Astronomers time rare double occultation',
+  'Foundry restarts after decade of silence',
+  'Choir tour funds village hall repairs',
+  'Divers chart wreck off northern headland',
+  'Beekeepers report record clover honey',
+  'Planners unveil orbital cycle bridge',
+];
+
+/**
  * Filler so each front page has realistic depth and health has a stable baseline.
  *
  * Most slots keep the SAME url hour to hour, and only the last two rotate. A real front page turns
@@ -134,10 +154,14 @@ function filler(
 ): RawStoryRecord[] {
   return Array.from({ length: count }, (_, index) => {
     const rotating = index >= count - 2;
-    // Offsetting by outlet keeps two front pages from filling with the same subjects.
-    const subject =
-      FILLER_SUBJECTS[(sourceIndex * 7 + index + (rotating ? hour : 0)) % FILLER_SUBJECTS.length] ??
-      'Local news roundup';
+    // Offsetting by outlet keeps two front pages from filling with the same subjects. Rotating
+    // slots draw from their own pool so a subject can never hop between URLs across one diff.
+    const subject = rotating
+      ? (ROTATING_SUBJECTS[
+          (sourceIndex * 3 + hour * 2 + (index - (count - 2))) % ROTATING_SUBJECTS.length
+        ] ?? 'Local news roundup')
+      : (FILLER_SUBJECTS[(sourceIndex * 7 + index) % FILLER_SUBJECTS.length] ??
+        'Local news roundup');
     const slug = rotating ? `hourly-${hour}-${index}` : `standing-${index}`;
     return {
       headline: subject,

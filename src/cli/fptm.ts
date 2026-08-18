@@ -9,8 +9,10 @@ import { captureOutlet } from '../collect/capture.js';
 import { applyCollectorEnv, DEFAULT_OUTLETS, readyOutlets } from '../config/outlets.js';
 import { DEMO_FEATURED_SLUG, DEMO_HOURS, DEMO_MARKER, buildDemoCaptures } from '../demo/seed.js';
 import { beginEpisode } from '../heal/episode.js';
+import type { PhaseMark } from '../heal/episode.js';
 import { buildHealPrompt } from '../heal/heal-prompt.js';
-import { healOutlet } from '../heal/run-heal.js';
+import { healOutlet, sanitizeErrorMessage, verifyCollector } from '../heal/run-heal.js';
+import { approveHeal } from '../collect/brightdata.js';
 import { computeHealth, diagnosticsFor, isHealable, shouldHeal } from '../health/health.js';
 import type { HealthStatus } from '../health/health.js';
 import { renderDiff, renderHealEpisode, renderHealthReport } from '../report/render.js';
@@ -192,6 +194,9 @@ async function readAllRecords(
   const sources: string[] = [];
 
   for (const outlet of applyCollectorEnv(DEFAULT_OUTLETS)) {
+    // The drill fixture can be captured and healed like any outlet, but its synthetic stories must
+    // never blend into the real archive's cross-outlet findings.
+    if (outlet.synthetic) continue;
     const dates = await listCaptureDates(outlet.source, store);
     if (dates.length === 0) continue;
     sources.push(outlet.source);
@@ -249,16 +254,22 @@ async function story(): Promise<void> {
 
   // Longest-running first: a story that held a front page for hours is the interesting one.
   const ranked = clusters
-    .map((cluster) => buildPropagation(cluster, sources))
+    .map((cluster) => ({
+      propagation: buildPropagation(cluster, sources),
+      confidence: cluster.confidence,
+      size: cluster.records.length,
+    }))
     .sort(
       (a, b) =>
-        b.outlets.length - a.outlets.length ||
-        Math.max(...b.outlets.map((o) => o.captures_present)) -
-          Math.max(...a.outlets.map((o) => o.captures_present)),
+        b.propagation.outlets.length - a.propagation.outlets.length ||
+        Math.max(...b.propagation.outlets.map((o) => o.captures_present)) -
+          Math.max(...a.propagation.outlets.map((o) => o.captures_present)),
     );
 
-  for (const propagation of ranked.slice(0, 10)) {
-    console.log(`"${propagation.label}"`);
+  for (const { propagation, confidence, size } of ranked.slice(0, 10)) {
+    // Confidence is only meaningful for a group — a story seen once agrees with itself trivially.
+    const confidenceNote = size > 1 ? `  (match confidence ${Math.round(confidence * 100)}%)` : '';
+    console.log(`"${propagation.label}"${confidenceNote}`);
     console.log(
       `  first seen: ${propagation.first_detected.source_name} at ${propagation.first_detected.at.slice(11, 16)}`,
     );
@@ -382,6 +393,9 @@ async function timeline(argv: readonly string[]): Promise<void> {
 
   const captures: CaptureSnapshot[] = [];
   for (const outlet of applyCollectorEnv(DEFAULT_OUTLETS)) {
+    // Fixture captures stay off the news timeline; its repair episode still shows in Repairs,
+    // clearly named as the fixture — that episode IS the drill's evidence.
+    if (outlet.synthetic) continue;
     for (const date of await listCaptureDates(outlet.source, store)) {
       captures.push(...(await readCapturesForDate(outlet.source, date, store)));
     }
@@ -448,10 +462,143 @@ async function heal(source: string | undefined, argv: readonly string[]): Promis
   const episode = await healOutlet(outlet, report, {
     mode: flags['autonomous'] === 'true' ? 'autonomous' : 'gated',
     ...(flags['timeout'] === undefined ? {} : { timeoutSeconds: Number(flags['timeout']) }),
+    // Verification is judged against the same stored baseline the trigger report was.
+    store,
   });
   const ledgerPath = await appendEpisode(episode);
   console.log(`\n${renderHealEpisode(episode)}`);
   console.log(`\n  episode recorded → ${ledgerPath}`);
+}
+
+/**
+ * `fptm approve <source>` — complete a gated heal: commit the pending fix, then verify it with the
+ * same health engine that detected the break.
+ *
+ * This is the missing half of the gated loop. `fptm heal` (and the watcher) stop at Bright Data's
+ * approval gate by design — a human sees the fix first — but a gate with no in-code completion
+ * path means the documented approve → rerun → RECOVERED sequence only existed for `--autonomous`.
+ * The resolution is appended to the ledger as a superseding line for the same detection, so the
+ * append-only history keeps both halves and every consumer shows the outcome.
+ */
+async function approve(source: string | undefined): Promise<void> {
+  if (source === undefined) {
+    console.error('usage: fptm approve <source>');
+    process.exitCode = 1;
+    return;
+  }
+  const outlet = readyOutlets(applyCollectorEnv(DEFAULT_OUTLETS)).find((o) => o.source === source);
+  if (outlet === undefined) {
+    console.error(`No ready collector for "${source}".`);
+    process.exitCode = 1;
+    return;
+  }
+
+  // The pending episode: the newest detection whose latest ledger line is still awaiting a human.
+  const episodes = await readEpisodes(source);
+  const latestByDetection = new Map<string, (typeof episodes)[number]>();
+  for (const episode of episodes) latestByDetection.set(episode.detected_at, episode);
+  const pending = [...latestByDetection.values()]
+    .filter((episode) => episode.state === 'HEALING')
+    .at(-1);
+  if (pending === undefined) {
+    console.error(`No heal awaiting approval for "${source}" in the episode ledger.`);
+    console.error('Run `npm run heal -- <source>` first (or let the watcher request one).');
+    process.exitCode = 1;
+    return;
+  }
+
+  const now = (): string => new Date().toISOString();
+  const marks = Array.isArray(pending['phase_marks'])
+    ? (pending['phase_marks'] as PhaseMark[])
+    : [];
+
+  console.log(
+    `Approving the pending heal for ${outlet.source_name} (detected ${pending.detected_at})…`,
+  );
+  // The CLI exits nonzero when the server-side heal has failed, so approve can THROW as well as
+  // return a bad status — measured live on the Fox News over-extraction heal, which came back
+  // `status: "failed"` after seven code_fixer cycles. Both shapes mean the same thing: nothing
+  // was committed, the old collector still works, and the ledger must say so.
+  let approveError: string | null = null;
+  try {
+    const approved = await approveHeal(outlet.collector_id, outlet.homepage_url, {});
+    if (approved.status !== 'done') {
+      approveError = approved.error ?? `approve returned status "${approved.status}"`;
+    }
+  } catch (error) {
+    approveError = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+  }
+  if (approveError !== null) {
+    const resolution = {
+      ...pending,
+      state: 'DEGRADED',
+      approved: false,
+      resolved_at: now(),
+      error: approveError,
+      phase_marks: [...marks, { phase: 'approve_failed', at: now() }],
+    };
+    await appendEpisode(resolution as never);
+    console.error(`\nApprove did not commit — the previous collector is untouched and still live.`);
+    console.error(`  ${approveError.split('\n')[0]}`);
+    console.error(`  resolution recorded in the ledger; try a sharper \`fptm heal\` prompt next.`);
+    process.exitCode = 1;
+    return;
+  }
+  const approvedAt = now();
+  console.log('Committed. Verifying — rerunning the collector through the health engine…');
+
+  let verified: Awaited<ReturnType<typeof verifyCollector>>;
+  try {
+    verified = await verifyCollector(outlet, {
+      store: { rootDir: 'snapshots' },
+      detectedAt: pending.detected_at,
+      now,
+    });
+  } catch (error) {
+    // Committed but unproven — the mirror of healOutlet's post-commit catch. Never "heal failed":
+    // the collector HAS changed, and the next capture will judge it.
+    const message = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+    const resolution = {
+      ...pending,
+      state: 'DEGRADED',
+      approved: true,
+      resolved_at: now(),
+      error: `committed, but the verification rerun failed: ${message}`,
+      phase_marks: [...marks, { phase: 'approved', at: approvedAt }],
+    };
+    await appendEpisode(resolution as never);
+    console.error(`\nCommitted, but the verification rerun failed: ${message.split('\n')[0]}`);
+    console.error(
+      'The next capture will judge the healed collector; episode recorded as unverified.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const { report, storyCount, healthAfter } = verified;
+
+  const resolution = {
+    ...pending,
+    state: report.status === 'HEALTHY' ? 'RECOVERED' : 'DEGRADED',
+    approved: true,
+    stories_after: storyCount,
+    health_after: healthAfter,
+    resolved_at: now(),
+    error: null,
+    phase_marks: [
+      ...marks,
+      { phase: 'approved', at: approvedAt },
+      { phase: 'verified_by_rerun', at: now() },
+    ],
+  };
+  const ledgerPath = await appendEpisode(resolution as never);
+
+  console.log(`\n${renderHealthReport(report)}`);
+  console.log(`\nResult: ${resolution.state}`);
+  console.log(`  ${pending.stories_before} → ${storyCount} stories`);
+  if (healthAfter.failing.length > 0) {
+    console.log(`  still failing: ${healthAfter.failing.join(', ')}`);
+  }
+  console.log(`\n  resolution recorded → ${ledgerPath}`);
 }
 
 const [, , command, argument] = process.argv;
@@ -479,15 +626,21 @@ switch (command) {
   case 'heal':
     await heal(argument, rest);
     break;
+  case 'approve':
+    await approve(argument);
+    break;
   default:
-    console.log('usage: fptm <demo|capture|watch|diff|story|timeline|heal>');
+    console.log('usage: fptm <demo|capture|watch|diff|story|timeline|heal|approve>');
     console.log('  demo            run the whole product on synthetic data (no account needed)');
     console.log('  capture         capture every outlet that has a Scraper Studio collector, once');
     console.log('  watch           capture on the hour, forever, healing what stays broken');
     console.log("  diff <source>   what changed between that outlet's last two captures");
     console.log('  story           cluster every stored capture and trace how stories spread');
     console.log('  timeline        render the archive into one self-contained HTML page');
-    console.log("  heal <source>   detect, repair and verify one outlet's collector");
+    console.log("  heal <source>   detect and repair one outlet's collector (stops at the gate)");
+    console.log(
+      '  approve <source> commit the pending gated heal, then verify it by health engine',
+    );
     console.log('');
     console.log('watch flags:');
     console.log('  --interval <min>   capture cadence, must divide 24h evenly (default 60)');

@@ -16,6 +16,7 @@
     "story": "node --env-file-if-exists=.env --import tsx src/cli/fptm.ts story",
     "timeline": "node --env-file-if-exists=.env --import tsx src/cli/fptm.ts timeline",
     "heal": "node --env-file-if-exists=.env --import tsx src/cli/fptm.ts heal",
+    "approve": "node --env-file-if-exists=.env --import tsx src/cli/fptm.ts approve",
     "typecheck": "tsc --noEmit",
     "test": "mocha",
     "coverage": "c8 mocha",

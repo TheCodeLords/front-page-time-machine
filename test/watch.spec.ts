@@ -8,14 +8,18 @@ import type { WatchOptions, WatchState } from '../src/schedule/watch.js';
 import type { TickContext } from '../src/schedule/scheduler.js';
 import { appendCapture } from '../src/store/snapshot-store.js';
 import type { StoreOptions } from '../src/store/snapshot-store.js';
-import { buildCaptureSnapshot } from '../src/schema/normalize.js';
+import { buildCapture, buildCaptureSnapshot } from '../src/schema/normalize.js';
 import type { CommandRunner } from '../src/collect/brightdata.js';
+import { appendEpisode } from '../src/store/episode-store.js';
+import { beginEpisode } from '../src/heal/episode.js';
+import { computeHealth } from '../src/health/health.js';
 
 const NPR: ReadyOutlet = {
   source: 'npr',
   source_name: 'NPR',
   homepage_url: 'https://www.npr.org',
   collector_id: 'c_npr',
+  synthetic: false,
 };
 
 const BBC: ReadyOutlet = {
@@ -23,6 +27,7 @@ const BBC: ReadyOutlet = {
   source_name: 'BBC News',
   homepage_url: 'https://www.bbc.com/news',
   collector_id: 'c_bbc',
+  synthetic: false,
 };
 
 let store: StoreOptions;
@@ -272,5 +277,58 @@ describe('seedWatchState', () => {
     const { runner } = fakeRunner([40]);
     const state = await seedWatchState(optionsFor([NPR], runner));
     expect(state.get('npr')?.statuses).to.deep.equal([]);
+  });
+
+  it('restores the heal budget and gated latch from the episode ledger', async () => {
+    // Without this, every restart handed a permanently-broken outlet a fresh budget — three more
+    // 20-minute heals against the same wall, per restart — and re-requested a gated fix a human
+    // had already been asked to review.
+    for (const at of ['2026-08-17T08:00:00.000Z', '2026-08-17T09:00:00.000Z']) {
+      await appendCapture(
+        buildCaptureSnapshot(
+          [],
+          {
+            source: 'npr',
+            source_name: 'NPR',
+            homepage_url: 'https://www.npr.org',
+            captured_at: at,
+            capture_id: nextId(),
+          },
+          { collector_id: 'c_npr', screenshot_path: null },
+        ),
+        store,
+      );
+    }
+    const episodeStore = { rootDir: path.join(store.rootDir, 'episodes') };
+    const broken = buildCapture(
+      [],
+      {
+        source: 'npr',
+        source_name: 'NPR',
+        homepage_url: 'https://www.npr.org',
+        captured_at: '2026-08-17T09:00:00.000Z',
+        capture_id: nextId(),
+      },
+      { collector_id: 'c_npr', screenshot_path: null },
+    );
+    const trigger = computeHealth({ ...broken, baseline: [] });
+    for (const detectedAt of [
+      '2026-08-17T08:10:00.000Z',
+      '2026-08-17T08:40:00.000Z',
+      '2026-08-17T09:10:00.000Z',
+    ]) {
+      await appendEpisode(beginEpisode(trigger, 'fix it', detectedAt), episodeStore);
+    }
+
+    const { runner, calls } = fakeRunner([0]);
+    const options = { ...optionsFor([NPR], runner), episodeStore };
+    const state = await seedWatchState(options);
+
+    expect(state.get('npr')?.healsThisOutage).to.equal(3);
+    expect(state.get('npr')?.healPending).to.equal(true);
+
+    // Budget spent and a fix already awaiting a human: the restarted watcher must not heal again.
+    await runWatchTick(context(1), state, options);
+    expect(calls.some((c) => c.startsWith('scraper heal'))).to.equal(false);
   });
 });

@@ -15,12 +15,22 @@ is invented — the fixture must never be mistakable for a real publication.
 
 ## The drill
 
-1. Host v1 at a stable public URL. Build a collector against it with the same one-sentence
-   description used for the six real outlets. Capture until a baseline exists.
-2. Replace the content at that URL with v2. **Do not touch the collector.**
+The fixture is a first-class outlet in the registry (`source: meridian`, flagged `synthetic: true`),
+inert until `FPTM_COLLECTORS` assigns it a collector, and excluded from `story`/`timeline` analysis
+so its invented stories can never blend into the real archive. Its repair episode does appear in the
+timeline's Repairs panel, clearly named as the fixture — that episode is the drill's evidence.
+
+1. Host v1 at a stable public URL. With GitHub Pages enabled on this repo it already is:
+   `https://thecodelords.github.io/front-page-time-machine/mock/homepage-v1.html`. Build a collector
+   against it with the same one-sentence description used for the six real outlets
+   (`brightdata scraper create <url> "$(cat collectors/homepage-description.txt)"`), add
+   `meridian:c_xxx` to `FPTM_COLLECTORS`, and capture until a baseline exists.
+2. Replace the content at that URL with v2 — commit v2's markup over `homepage-v1.html` (same path,
+   same URL; Pages redeploys in about a minute). **Do not touch the collector.**
 3. Watch the pipeline do its job with no hints: health degrades, the debounce fills, the generated
-   heal prompt quotes the actual failure counts, the gated heal proposes a fix, approval commits it,
-   and the re-run proves recovery — or honestly fails to.
+   heal prompt quotes the actual failure counts, the gated heal (`fptm heal meridian`) proposes a
+   fix, approval commits it — and the rerun goes back through the health engine, which alone decides
+   RECOVERED, or honestly declines to.
 
 The value over `fptm demo` (which simulates the break with a scripted runner and says so on screen)
 is that every step is real: real fetch, real collector, real AI repair against a page whose "before"
@@ -29,8 +39,7 @@ and "after" you can diff character by character.
 ## Hosting — what we measured, and what is left
 
 The constraint: Scraper Studio collectors execute in Bright Data's cloud, so the mock page must be
-publicly reachable. `localhost` can never work, and this machine cannot deploy or push until the
-final day.
+publicly reachable. `localhost` can never work.
 
 **Claude Artifact hosting was tested and does not work.** We published v1 as an artifact and fetched
 it through `brightdata scrape -f markdown`: 80 bytes came back — the artifact viewer's chrome, none
@@ -38,12 +47,13 @@ of the fixture's stories. Artifacts are private by default and render content th
 sandbox, so the collector sees the wrapper, not the page. Recorded here so nobody re-burns an
 afternoon on it.
 
-Workable options for the demo day, in order of preference:
+**RESOLVED: the repo is public and GitHub Pages is enabled**, so the fixture serves at
+`https://thecodelords.github.io/front-page-time-machine/mock/homepage-v1.html` — verified reachable.
+The fallback ladder below is kept for the record:
 
 1. **Any drag-and-drop static host** usable from a browser (no git, no CLI) — upload v1, run the
    drill, re-upload v2 over it. Same URL throughout is the requirement.
-2. **GitHub Pages** once the repo goes public on the final day — commit v1 as `index.html`, run the
-   drill, commit v2 over it. Slowest (Pages cache), but zero new accounts.
+2. **GitHub Pages** — commit v1, run the drill, commit v2 over it. This is the path now live.
 3. If neither is reachable from the demo network: fall back to `fptm demo`'s scripted break —
    **disclosed as simulated, on stage, every time.** A staged break presented as real is the one
    way this feature can lose points; the three real heal episodes in

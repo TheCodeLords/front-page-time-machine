@@ -97,6 +97,26 @@ describe('buildTimelinePayload', () => {
     expect(payload.ticks).to.deep.equal([]);
     expect(payload.captures).to.deep.equal([]);
   });
+
+  it('carries the lead flag explicitly, so a rank-1 promo is not the lead', () => {
+    // The Guardian case: a newsletter card held rank 1. The page must highlight the first
+    // EDITORIAL story as the lead, and the divergence math must count that story, not the promo.
+    const payload = buildTimelinePayload(
+      [
+        makeCapture('guardian', 'Guardian', '2026-08-17T13:00:00.000Z', [
+          'Sign up for The Hotspot',
+          'Ceasefire talks resume in Geneva',
+        ]),
+      ],
+      [],
+      NOW,
+    );
+
+    const records = payload.captures[0]?.records ?? [];
+    expect(records[0]?.p).to.equal(1);
+    expect(records[0]?.l).to.equal(0);
+    expect(records[1]?.l).to.equal(1);
+  });
 });
 
 describe('renderTimeline', () => {
@@ -155,6 +175,7 @@ describe('renderTimeline', () => {
           stories_before: 2,
           stories_after: 31,
           approved: true,
+          health_after: { status: 'HEALTHY', failing: [] },
           resolved_at: '2026-08-17T13:04:00.000Z',
           error: null,
           phase_marks: [
@@ -175,6 +196,75 @@ describe('renderTimeline', () => {
     expect(html).to.contain('verified_by_rerun 3m');
     // Prompts quote scraped failure details — hostile input, escaped like headlines.
     expect(html).to.not.contain('<script>alert');
+    // The health engine's verdict on the rerun is the claim that matters — it must be on the page.
+    expect(html).to.contain('rerun verified HEALTHY');
+  });
+
+  it('shows a committed-but-unverified heal for what it is', () => {
+    const unverified = buildTimelinePayload(
+      [makeCapture('npr', 'NPR', '2026-08-17T13:00:00.000Z', ['Plain headline'])],
+      [
+        {
+          source: 'npr',
+          source_name: 'NPR',
+          collector_id: 'c_x',
+          detected_at: '2026-08-17T12:40:00.000Z',
+          state: 'DEGRADED',
+          prompt: 'fix extraction',
+          stories_before: 2,
+          stories_after: 3,
+          approved: true,
+          health_after: { status: 'DEGRADED', failing: ['story_count'] },
+          resolved_at: '2026-08-17T13:04:00.000Z',
+          error: null,
+          phase_marks: [],
+        },
+      ],
+      NOW,
+    );
+    expect(renderTimeline(unverified)).to.contain('rerun still DEGRADED');
+  });
+
+  it('gives the page a what-changed strip fed by the same capture lookup as the cards', () => {
+    const html = renderTimeline(payload);
+    expect(html).to.contain('id="delta"');
+    expect(html).to.contain('renderDelta');
+  });
+
+  it('shows one row per repair — an approve resolution supersedes its pending line', () => {
+    // `fptm approve` appends a resolution with the same source and detected_at. The ledger keeps
+    // both lines (append-only history); the page must show only the outcome.
+    const base = {
+      source: 'npr',
+      source_name: 'NPR',
+      collector_id: 'c_x',
+      detected_at: '2026-08-17T12:40:00.000Z',
+      prompt: 'fix extraction',
+      stories_before: 2,
+      resolved_at: null,
+      error: null,
+      phase_marks: [],
+      health_after: null,
+    };
+    const superseded = buildTimelinePayload(
+      [makeCapture('npr', 'NPR', '2026-08-17T13:00:00.000Z', ['Plain headline'])],
+      [
+        { ...base, state: 'HEALING', approved: false, stories_after: null },
+        {
+          ...base,
+          state: 'RECOVERED',
+          approved: true,
+          stories_after: 31,
+          health_after: { status: 'HEALTHY', failing: [] },
+          resolved_at: '2026-08-17T13:20:00.000Z',
+        },
+      ],
+      NOW,
+    );
+
+    expect(superseded.episodes).to.have.length(1);
+    expect(superseded.episodes[0]?.state).to.equal('RECOVERED');
+    expect(superseded.episodes[0]?.verified).to.equal('HEALTHY');
   });
 
   it('says plainly when there is nothing to show', () => {

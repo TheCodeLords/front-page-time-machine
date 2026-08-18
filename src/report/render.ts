@@ -114,7 +114,19 @@ export function renderHealEpisode(episode: HealEpisode): string {
   ];
 
   if (episode.stories_after !== null) {
-    lines.push('', 'Recovered:', `  ${episode.stories_before} → ${episode.stories_after} stories`);
+    lines.push('', 'Rerun:', `  ${episode.stories_before} → ${episode.stories_after} stories`);
+  }
+  // The verdict that decides RECOVERED vs still-degraded: the health engine's view of the rerun,
+  // not Bright Data's status field. "done" is an API response; this is the proof.
+  if (episode.health_after !== null) {
+    lines.push(
+      '',
+      'Verification (health engine on the rerun):',
+      `  ${episode.health_after.status}`,
+    );
+    if (episode.health_after.failing.length > 0) {
+      lines.push(`  still failing: ${episode.health_after.failing.join(', ')}`);
+    }
   }
   if (episode.error !== null) {
     lines.push('', 'Error:', `  ${episode.error}`);

@@ -31,6 +31,11 @@ interface SlimRecord {
   s: string | null;
   /** cluster id — the same story carries the same id across outlets and hours */
   c: number;
+  /**
+   * 1 when this is the outlet's lead. Carried explicitly rather than derived from `p === 1`
+   * because the lead is the first EDITORIAL story — a newsletter card can hold rank 1.
+   */
+  l: number;
 }
 
 interface SlimCapture {
@@ -55,6 +60,8 @@ export interface SlimEpisode {
   prompt: string;
   /** phase → minutes since the previous phase, in order. Where the 15–30 minutes went. */
   phases: { phase: string; minutes: number }[];
+  /** The health engine's verdict on the verification rerun, e.g. "HEALTHY". Null pre-verification. */
+  verified: string | null;
 }
 
 export interface TimelinePayload {
@@ -124,6 +131,7 @@ function slimEpisode(episode: EpisodeRecord): SlimEpisode {
     error: episode.error,
     prompt: episode.prompt,
     phases,
+    verified: episode.health_after?.status ?? null,
   };
 }
 
@@ -159,6 +167,7 @@ export function buildTimelinePayload(
       p: record.position,
       s: record.section,
       c: clusterOf.get(`${record.source}|${record.captured_at}|${record.article_url}`) ?? -1,
+      l: record.is_lead ? 1 : 0,
     })),
   }));
 
@@ -167,7 +176,7 @@ export function buildTimelinePayload(
     const leads = new Map<string, number>();
     for (const capture of slim) {
       if (capture.t !== tickIndex) continue;
-      const lead = capture.records.find((r) => r.p === 1);
+      const lead = capture.records.find((r) => r.l === 1);
       if (lead && lead.c >= 0) leads.set(capture.src, lead.c);
     }
     return leadDivergence(leads);
@@ -175,9 +184,14 @@ export function buildTimelinePayload(
 
   const outlets = [...new Map(slim.map((c) => [c.src, { src: c.src, name: c.name }])).values()];
 
-  const slimEpisodes = [...episodes]
-    .sort((a, b) => a.detected_at.localeCompare(b.detected_at))
-    .map(slimEpisode);
+  // One repair, one row: `fptm approve` resolves a gated episode by appending a superseding line
+  // with the same source and detected_at, so the LAST line for a given detection wins here — the
+  // ledger keeps both (it is append-only history); the page shows the outcome.
+  const latestByDetection = new Map<string, EpisodeRecord>();
+  for (const episode of [...episodes].sort((a, b) => a.detected_at.localeCompare(b.detected_at))) {
+    latestByDetection.set(`${episode.source}|${episode.detected_at}`, episode);
+  }
+  const slimEpisodes = [...latestByDetection.values()].map(slimEpisode);
 
   return {
     generated_at: now(),
@@ -209,12 +223,19 @@ function renderRepairs(episodes: readonly SlimEpisode[]): string {
         episode.after !== null
           ? `${episode.before} → ${episode.after} stories`
           : `${episode.before} stories at detection`;
+      // The claim that matters: was the rerun judged healthy by the same engine that fired the heal?
+      const verification =
+        episode.verified === null
+          ? ''
+          : episode.verified === 'HEALTHY'
+            ? ' <span class="verify ok">rerun verified HEALTHY</span>'
+            : ` <span class="verify bad">rerun still ${escapeHtml(episode.verified)}</span>`;
       const phases = episode.phases
         .map((p) => `<span class="phase">${escapeHtml(p.phase)} ${p.minutes}m</span>`)
         .join(' ');
       return `<details class="repair">
   <summary>🔧 <strong>${escapeHtml(episode.name)}</strong> ${escapeHtml(episode.at.slice(11, 16))} UTC
-    <span class="state">${escapeHtml(episode.state)}</span> <span class="outcome">${escapeHtml(outcome)}</span></summary>
+    <span class="state">${escapeHtml(episode.state)}</span> <span class="outcome">${escapeHtml(outcome)}</span>${verification}</summary>
   <p class="prompt-label">Prompt sent (generated from the health report):</p>
   <blockquote>${escapeHtml(episode.prompt)}</blockquote>
   ${phases ? `<p class="phases">${phases}</p>` : ''}
@@ -302,6 +323,10 @@ export function renderTimeline(payload: TimelinePayload): string {
   .repair .prompt-label { font-size: 0.76rem; color: var(--muted); margin-top: 0.4rem; }
   .repair .phase { font: 0.72rem/1.6 'Courier New', monospace; background: var(--hl); padding: 0.1rem 0.4rem; margin-right: 0.3rem; }
   .repair .err { color: var(--down); font-size: 0.82rem; }
+  .repair .verify { font: 700 0.72rem/1.4 'Courier New', monospace; }
+  .repair .verify.ok { color: var(--up); }
+  .repair .verify.bad { color: var(--down); }
+  #delta { color: var(--muted); font-size: 0.8rem; margin: -0.6rem 0 0.9rem; font-style: italic; }
   footer { margin-top: 1.4rem; color: var(--muted); font-size: 0.76rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
   a { color: inherit; }
   @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
@@ -323,6 +348,7 @@ ${
 </div>
 <div class="divergence" id="divergence"></div>
 <div class="div-caption">Divergence — how much the front pages disagreed about the lead story at each hour (Shannon entropy). Tall bars are where to scrub to. Click a bar to jump.</div>
+<div id="delta"></div>
 ${renderRepairs(payload.episodes)}
 <div id="trail"></div>
 <div class="grid" id="grid"></div>`
@@ -331,7 +357,10 @@ ${renderRepairs(payload.episodes)}
 <footer>
   Generated ${escapeHtml(payload.generated_at)} from ${payload.captures.length} captures ·
   ${payload.outlets.length} outlets · placement and timing only — headlines verbatim, no tone, no ranking of outlets.
-  Extraction by Bright Data Scraper Studio; one collector per outlet from one shared description.
+  Ranks are observed homepage order within each outlet's extracted story sequence, not pixel prominence,
+  and each stop is a capture <em>window</em> (outlets fetched serially over a few minutes), so times mean
+  "first observed", never "first published". Extraction by Bright Data Scraper Studio; one collector per
+  outlet from one shared description.
 </footer>
 <script type="application/json" id="data">${embedJson(payload)}</script>
 <script>
@@ -365,6 +394,32 @@ ${renderRepairs(payload.episodes)}
     return prev;
   }
 
+  // "What changed?" — this tick's front pages against the previous stop, summed across outlets.
+  // Computed from the same captureFor() the cards use, so the strip can never disagree with them.
+  function renderDelta() {
+    var el = document.getElementById('delta');
+    if (state.tick === 0) { el.textContent = ''; return; }
+    var added = 0, removed = 0, moved = 0, spreadMax = 0;
+    for (var o = 0; o < data.outlets.length; o++) {
+      var cur = captureFor(data.outlets[o].src, state.tick);
+      var was = captureFor(data.outlets[o].src, state.tick - 1);
+      if (!cur || !was || cur.at === was.at) continue;
+      var wasByUrl = {};
+      for (var i = 0; i < was.records.length; i++) wasByUrl[was.records[i].u] = was.records[i].p;
+      var curUrls = {};
+      for (var j = 0; j < cur.records.length; j++) {
+        var rec = cur.records[j];
+        curUrls[rec.u] = true;
+        if (wasByUrl[rec.u] === undefined) added++;
+        else if (wasByUrl[rec.u] !== rec.p) moved++;
+      }
+      for (var k = 0; k < was.records.length; k++) if (!curUrls[was.records[k].u]) removed++;
+    }
+    if (added + removed + moved === 0) { el.textContent = ''; return; }
+    el.textContent = 'since the previous stop: ' + added + ' stories arrived, '
+      + removed + ' left the front pages, ' + moved + ' changed rank';
+  }
+
   function movement(record, prev) {
     if (!prev) return '';
     var was = null;
@@ -393,7 +448,7 @@ ${renderRepairs(payload.episodes)}
         var top = cap.records.slice(0, 12);
         for (var r = 0; r < top.length; r++) {
           var rec = top[r];
-          var cls = 'story' + (rec.p === 1 ? ' lead' : '') + (state.cluster !== null && rec.c === state.cluster ? ' hl' : '');
+          var cls = 'story' + (rec.l === 1 ? ' lead' : '') + (state.cluster !== null && rec.c === state.cluster ? ' hl' : '');
           html += '<div class="' + cls + '" data-cluster="' + rec.c + '">'
             + '<span class="rank">' + rec.p + '</span>'
             + '<span><span class="h">' + esc(rec.h) + '</span>'
@@ -411,6 +466,7 @@ ${renderRepairs(payload.episodes)}
     document.getElementById('scrub').value = state.tick;
     var bars = document.querySelectorAll('.divergence .bar');
     for (var b = 0; b < bars.length; b++) bars[b].className = 'bar' + (b === state.tick ? ' active' : '');
+    renderDelta();
   }
 
   function renderTrail() {
@@ -428,7 +484,7 @@ ${renderRepairs(payload.episodes)}
         if (c.at < s.first) s.first = c.at;
         if (c.at > s.last) s.last = c.at;
         if (rec.p < s.peak) s.peak = rec.p;
-        if (rec.p === 1) s.leads++;
+        if (rec.l === 1) s.leads++;
       }
     }
     var rows = '';

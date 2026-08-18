@@ -36,6 +36,14 @@ export const EpisodeRecordSchema = z
     stories_before: z.number(),
     stories_after: z.number().nullable(),
     approved: z.boolean(),
+    /**
+     * The health engine's verdict on the verification rerun. Defaulted null so episodes written
+     * before verified recovery existed still parse — same rule as every schema addition.
+     */
+    health_after: z
+      .object({ status: z.string(), failing: z.array(z.string()) })
+      .nullable()
+      .default(null),
     resolved_at: z.string().nullable(),
     error: z.string().nullable(),
   })

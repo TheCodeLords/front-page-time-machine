@@ -1,5 +1,10 @@
 import { expect } from 'chai';
-import { normalizeRecord, normalizeRecords } from '../src/schema/normalize.js';
+import {
+  classifyContentKind,
+  normalizeCapture,
+  normalizeRecord,
+  normalizeRecords,
+} from '../src/schema/normalize.js';
 import type { CaptureContext } from '../src/schema/normalize.js';
 import type { RawStoryRecord } from '../src/schema/story-snapshot.js';
 
@@ -180,5 +185,109 @@ describe('normalizeRecords', () => {
       { headline: '', article_url: '/news/a' },
     ];
     expect(normalizeRecords(raw, CONTEXT)).to.deep.equal([]);
+  });
+
+  it('counts how many surviving ranks came from the collector itself', () => {
+    // The auditable half of the "observed rank" claim: 2 of these 3 ranks are the publisher's own
+    // ordering; the third is document order. The diagnostic records exactly that split.
+    const raw: RawStoryRecord[] = [
+      { headline: 'One', article_url: '/a', position: 1 },
+      { headline: 'Two', article_url: '/b', position: 2 },
+      { headline: 'Three', article_url: '/c' },
+    ];
+    const { diagnostics } = normalizeCapture(raw, CONTEXT);
+    expect(diagnostics.positions_from_collector).to.equal(2);
+  });
+
+  it('counts surviving records, so collapsed duplicates cannot inflate the rank audit', () => {
+    // Review-confirmed: counting raw rows let the count exceed records.length — "N = records means
+    // the publisher's ordering was used throughout" stops being checkable the moment that happens.
+    const raw: RawStoryRecord[] = [
+      { headline: 'Hero copy', article_url: '/a', position: 1 },
+      { headline: 'Rail copy', article_url: '/a?utm_source=rail', position: 9 },
+      { headline: 'Other', article_url: '/b', position: 2 },
+    ];
+    const { records, diagnostics } = normalizeCapture(raw, CONTEXT);
+    expect(records).to.have.length(2);
+    expect(diagnostics.positions_from_collector).to.equal(2);
+  });
+});
+
+describe('content kind — promos must not become the lead', () => {
+  it('classifies self-referential signup cards as promo, by headline and by URL', () => {
+    // The live case: the Guardian's rank-1 slot was "Sign up for The Hotspot" — a perfectly valid
+    // record that would have made a newsletter box the day's most important story.
+    expect(classifyContentKind('Sign up for The Hotspot', 'https://g.example/x')).to.equal('promo');
+    expect(
+      classifyContentKind('The Hotspot', 'https://g.example/newsletters/the-hotspot'),
+    ).to.equal('promo');
+  });
+
+  it('does not confuse news ABOUT newsletters or signups with promos', () => {
+    expect(
+      classifyContentKind('DOJ investigates newsletter startup', 'https://g.example/news/doj'),
+    ).to.equal('editorial');
+    expect(
+      classifyContentKind('Voter sign-up surges in swing states', 'https://g.example/news/voters'),
+    ).to.equal('editorial');
+  });
+
+  it('never demotes journalism that merely opens with an imperative', () => {
+    // Each of these was a confirmed false positive of the first-draft patterns: bare "listen
+    // live", "follow us" and "download the app" all match real headlines. The rule now requires
+    // the full self-referential ask.
+    const editorial = [
+      ['Listen live: Special coverage of the Supreme Court ruling', 'https://npr.example/live/1'],
+      ['Follow us into the tunnels beneath Gaza', 'https://g.example/world/tunnels'],
+      [
+        'Download the app millions of migrants must use at the border',
+        'https://c.example/news/app',
+      ],
+      ['Sign up or ship out: inside the new draft board', 'https://n.example/news/draft'],
+      ['Subscribe-and-own schemes reshape the housing market', 'https://b.example/business/homes'],
+    ] as const;
+    for (const [headline, url] of editorial) {
+      expect(classifyContentKind(headline, url), headline).to.equal('editorial');
+    }
+  });
+
+  it('catches the live Guardian promos by their real URLs', () => {
+    // Verbatim from the committed archive: promos resolve to /sign-up-to-… slugs.
+    expect(
+      classifyContentKind(
+        'Sign up to The Hotspot',
+        'https://theguardian.com/global/2026/apr/02/sign-up-to-the-hotspot',
+      ),
+    ).to.equal('promo');
+    expect(
+      classifyContentKind(
+        'First Edition: our free daily news email',
+        'https://theguardian.com/global/2022/sep/20/sign-up-for-the-first-edition-newsletter-our-free-news-email',
+      ),
+    ).to.equal('promo');
+  });
+
+  it('passes the lead over a promo to the first editorial story, keeping ranks intact', () => {
+    const raw: RawStoryRecord[] = [
+      { headline: 'Sign up for The Hotspot', article_url: '/newsletters/hotspot' },
+      { headline: 'Ceasefire talks resume', article_url: '/news/talks' },
+      { headline: 'Markets steady', article_url: '/news/markets' },
+    ];
+    const records = normalizeRecords(raw, CONTEXT);
+    // The promo really does occupy rank 1 — placement is a fact — but it is not the lead.
+    expect(records[0]?.position).to.equal(1);
+    expect(records[0]?.content_kind).to.equal('promo');
+    expect(records[0]?.is_lead).to.equal(false);
+    expect(records[1]?.is_lead).to.equal(true);
+    expect(records.filter((r) => r.is_lead)).to.have.length(1);
+  });
+
+  it('falls back to rank 1 as lead when every record is a promo', () => {
+    const raw: RawStoryRecord[] = [
+      { headline: 'Sign up for our newsletter', article_url: '/newsletters/daily' },
+      { headline: 'Subscribe today', article_url: '/subscribe' },
+    ];
+    const records = normalizeRecords(raw, CONTEXT);
+    expect(records[0]?.is_lead).to.equal(true);
   });
 });

@@ -10,10 +10,10 @@
  *
  * Drift is the reason. A capture that takes 40s pushes the next one to :00:40, then :01:22, and by
  * the end of a day the series is 20 minutes out of phase — which quietly ruins the two things this
- * project exists to do. Cross-outlet comparison needs every outlet sampled at the same instant to
- * mean anything, and hour-over-hour diffs need even spacing or "what changed in an hour" is really
- * "what changed in 68 minutes". Aligning to the boundary makes late runs lose their lateness instead
- * of accumulating it.
+ * project exists to do. Cross-outlet comparison needs every outlet sampled inside the same narrow
+ * capture window to mean anything, and hour-over-hour diffs need even spacing or "what changed in
+ * an hour" is really "what changed in 68 minutes". Aligning to the boundary makes late runs lose
+ * their lateness instead of accumulating it.
  */
 export function nextTickAfter(now: Date, intervalMinutes: number): Date {
   assertInterval(intervalMinutes);

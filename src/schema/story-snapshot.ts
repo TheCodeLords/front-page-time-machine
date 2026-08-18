@@ -55,6 +55,18 @@ export const RawStoryRecordSchema = z
   .passthrough();
 export type RawStoryRecord = z.infer<typeof RawStoryRecordSchema>;
 
+/**
+ * Editorial story vs. house promotion.
+ *
+ * Found live: the Guardian's rank-1 slot was a newsletter signup card ("Sign up for The Hotspot"),
+ * which validates perfectly as a story — headline, URL, position 1 — and would make `is_lead` claim
+ * a signup box was the day's most important story. Promos still occupy front-page real estate, so
+ * they keep their rank and stay in the archive; they are just barred from being the *lead*, because
+ * the lead is the placement claim the whole product stands on.
+ */
+export const ContentKind = z.enum(['editorial', 'promo']);
+export type ContentKind = z.infer<typeof ContentKind>;
+
 /** The canonical record. Strict by design — if it parses, downstream can trust every field. */
 export const StorySnapshotRecordSchema = z.object({
   /** Stable outlet slug, e.g. `bbc`. Never a display name — those get rebranded. */
@@ -73,10 +85,18 @@ export const StorySnapshotRecordSchema = z.object({
   image_url: z.string().url().nullable(),
   /** The publisher's own timestamp, when exposed. Often absent on a homepage. */
   published_at: IsoDateTime.nullable(),
+  /**
+   * Observed homepage rank: the story's ordinal within the extracted story sequence. The
+   * publisher's own position field when the collector returns one, document order otherwise —
+   * `diagnostics.positions_from_collector` records which. Deliberately NOT pixel prominence;
+   * see `ProminenceTier` above for why visual scores are not comparable across outlets.
+   */
   position: z.number().int().positive(),
   story_type: StoryType,
   is_lead: z.boolean(),
   prominence_tier: ProminenceTier,
+  /** Defaulted so every record written before the distinction existed parses as editorial. */
+  content_kind: ContentKind.default('editorial'),
 });
 export type StorySnapshotRecord = z.infer<typeof StorySnapshotRecordSchema>;
 
@@ -114,6 +134,13 @@ export const CaptureDiagnosticsSchema = z.object({
    * delete history.
    */
   raw_fields: z.array(z.string()).default([]),
+  /**
+   * How many surviving records took their rank from the collector's own position field, as opposed
+   * to document order. Persisted so the "observed rank" claim is auditable per capture: 0 means
+   * every rank in this capture is extraction order, N=records means the publisher's own ordering
+   * was used throughout. Defaulted like every addition here — new fields never delete history.
+   */
+  positions_from_collector: z.number().int().nonnegative().default(0),
 });
 export type CaptureDiagnostics = z.infer<typeof CaptureDiagnosticsSchema>;
 
@@ -135,6 +162,16 @@ export const CaptureSnapshotSchema = z.object({
    * disk — destroying irreplaceable history to add a field. Old lines parse and read back as null.
    */
   diagnostics: CaptureDiagnosticsSchema.nullable().default(null),
+  /**
+   * The capture window, made explicit. Six outlets are fetched serially, so one "tick" spans a few
+   * minutes of wall clock — `captured_at` is when THIS outlet's fetch began, `scheduled_for` is the
+   * tick boundary it belongs to (null for one-off manual captures), and `capture_completed_at` is
+   * when the collector returned. Recording all three is what lets the product say "first observed"
+   * instead of over-claiming "first published", and "the 14:00 capture window" instead of
+   * pretending six homepages were photographed in the same instant.
+   */
+  scheduled_for: IsoDateTime.nullable().default(null),
+  capture_completed_at: IsoDateTime.nullable().default(null),
   records: z.array(StorySnapshotRecordSchema),
 });
 export type CaptureSnapshot = z.infer<typeof CaptureSnapshotSchema>;

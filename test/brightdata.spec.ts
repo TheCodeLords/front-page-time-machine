@@ -68,6 +68,15 @@ describe('extractJson', () => {
     expect(extractJson(stdout)).to.deep.equal([{ headline: 'A' }]);
   });
 
+  it('is not fooled by a progress line that itself starts with a bracket', () => {
+    // "[12:00]" is an opening bracket too. Anchoring the scan on the FIRST bracket used to slice
+    // from the timestamp and throw away a payload that was sitting right there.
+    const stdout = '[12:00] fetching https://www.npr.org…\n[{"headline":"A"}]';
+    expect(extractJson(stdout)).to.deep.equal([{ headline: 'A' }]);
+    const withTrailer = '[12:00] fetching…\n[{"headline":"A"}]\nDone.';
+    expect(extractJson(withTrailer)).to.deep.equal([{ headline: 'A' }]);
+  });
+
   it('refuses empty output rather than returning a silent nothing', () => {
     expect(() => extractJson('   ')).to.throw(/no output/);
   });

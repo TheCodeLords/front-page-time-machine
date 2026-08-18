@@ -14,8 +14,8 @@ import {
 import type { HealthStatus, HealthThresholds } from '../health/health.js';
 import { readRecentCaptures } from '../store/snapshot-store.js';
 import type { StoreOptions } from '../store/snapshot-store.js';
-import { appendEpisode } from '../store/episode-store.js';
-import type { EpisodeStoreOptions } from '../store/episode-store.js';
+import { appendEpisode, readEpisodes } from '../store/episode-store.js';
+import type { EpisodeRecord, EpisodeStoreOptions } from '../store/episode-store.js';
 import type { TickContext } from './scheduler.js';
 
 /**
@@ -115,6 +115,7 @@ export async function seedWatchState(options: WatchOptions): Promise<WatchState>
       options.store,
     );
     const statuses: HealthStatus[] = [];
+    let lastHealthyAt = '';
     recent.forEach((snapshot, index) => {
       // Judge each capture against only what preceded it, exactly as it was judged when written.
       const report = computeHealth(
@@ -126,8 +127,29 @@ export async function seedWatchState(options: WatchOptions): Promise<WatchState>
         thresholds,
       );
       statuses.push(report.status);
+      if (report.status === 'HEALTHY') lastHealthyAt = snapshot.captured_at;
     });
-    state.set(outlet.source, { statuses, healPending: false, healsThisOutage: 0 });
+
+    // The heal budget and the gated latch survive a restart the same way the debounce does: the
+    // ledger already knows. Without this, every restart granted a permanently-broken outlet a
+    // fresh budget — three more 20-minute heals against the same wall, per restart.
+    let healsThisOutage = 0;
+    let healPending = false;
+    let episodes: EpisodeRecord[] = [];
+    try {
+      episodes = await readEpisodes(outlet.source, options.episodeStore ?? {});
+    } catch {
+      // A missing or unreadable ledger primes nothing — same grace as a fresh outlet.
+    }
+    const latestByDetection = new Map<string, EpisodeRecord>();
+    for (const episode of episodes) latestByDetection.set(episode.detected_at, episode);
+    const sinceOutage = [...latestByDetection.values()].filter(
+      (episode) => episode.detected_at > lastHealthyAt,
+    );
+    healsThisOutage = sinceOutage.length;
+    healPending = sinceOutage.at(-1)?.state === 'HEALING';
+
+    state.set(outlet.source, { statuses, healPending, healsThisOutage });
   }
 
   return state;
@@ -163,6 +185,9 @@ export async function runWatchTick(
         ...(options.screenshotDir === undefined ? {} : { screenshotDir: options.screenshotDir }),
         ...(options.runner ? { runner: options.runner } : {}),
         thresholds,
+        // Outlets are fetched serially, so the tick boundary is what groups them into one
+        // editorial moment. Recording it is what makes "the 14:00 capture window" a stored fact.
+        scheduledFor: context.scheduled_for,
       });
 
       result = {
@@ -209,6 +234,9 @@ export async function runWatchTick(
           const episode = await healOutlet(outlet, captured.health, {
             mode,
             ...(options.runner ? { runner: options.runner } : {}),
+            // The verification rerun is judged against the same stored baseline the trigger was.
+            store: options.store,
+            thresholds,
           });
           result = { ...result, heal: episode };
           // The ledger write is best-effort: losing a ledger line must never lose the tick.

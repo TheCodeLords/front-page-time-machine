@@ -322,6 +322,7 @@ describe('upstream errors', () => {
         rejected_self_link: 0,
         rejected_upstream_error: upstream,
         raw_fields: [],
+        positions_from_collector: 0,
       },
       baseline: [],
     });

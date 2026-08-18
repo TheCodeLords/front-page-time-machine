@@ -99,21 +99,45 @@ export function extractJson(stdout: string): unknown {
   try {
     return JSON.parse(trimmed);
   } catch {
-    // Fall through to bracket scanning.
+    // Fall through to line scanning.
   }
 
-  const firstArray = trimmed.indexOf('[');
-  const firstObject = trimmed.indexOf('{');
-  const candidates = [firstArray, firstObject].filter((index) => index >= 0);
-  if (candidates.length === 0)
-    throw new Error(`No JSON found in CLI output: ${trimmed.slice(0, 200)}`);
+  // The payload lands at the END of stdout, after any progress lines — so walk lines from the
+  // bottom and parse from the first JSON-looking line to the end. This is what keeps a progress
+  // line like "[12:00] fetching…" ahead of the payload from anchoring the naive first-bracket scan
+  // on a timestamp and poisoning the slice.
+  const lines = trimmed.split('\n');
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = (lines[index] ?? '').trim();
+    if (!line.startsWith('[') && !line.startsWith('{')) continue;
+    try {
+      return JSON.parse(lines.slice(index).join('\n'));
+    } catch {
+      // Not the payload start — keep walking up.
+    }
+  }
 
-  const start = Math.min(...candidates);
-  const closer = trimmed[start] === '[' ? ']' : '}';
-  const end = trimmed.lastIndexOf(closer);
-  if (end <= start) throw new Error(`Unterminated JSON in CLI output: ${trimmed.slice(0, 200)}`);
+  // Bracket-scan fallback for payloads with trailing chatter. Successive opening brackets are
+  // tried rather than trusting the first one blindly — "[12:00] fetching…" ahead of the payload
+  // is an opening bracket too, and anchoring on it used to poison the slice.
+  let start = -1;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const nextArray = trimmed.indexOf('[', start + 1);
+    const nextObject = trimmed.indexOf('{', start + 1);
+    const candidates = [nextArray, nextObject].filter((index) => index >= 0);
+    if (candidates.length === 0) break;
+    start = Math.min(...candidates);
 
-  return JSON.parse(trimmed.slice(start, end + 1));
+    const closer = trimmed[start] === '[' ? ']' : '}';
+    const end = trimmed.lastIndexOf(closer);
+    if (end <= start) continue;
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      // A false anchor — advance to the next opening bracket.
+    }
+  }
+  throw new Error(`No JSON found in CLI output: ${trimmed.slice(0, 200)}`);
 }
 
 /**

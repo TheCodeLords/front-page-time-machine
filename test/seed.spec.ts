@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { clusterStories } from '../src/analyze/cluster.js';
+import { diffCaptures } from '../src/analyze/diff.js';
 import { buildPropagation } from '../src/analyze/propagation.js';
 import { computeHealth, shouldHeal } from '../src/health/health.js';
 import type { HealthStatus } from '../src/health/health.js';
@@ -21,6 +22,31 @@ describe('demo seed', () => {
 
   it('produces a capture per outlet per hour', () => {
     expect(captures).to.have.length(DEMO_HOURS.length * DEMO_OUTLETS.length);
+  });
+
+  it('never shows the same headline as both NEW and REMOVED in one diff', () => {
+    // Found on stage, or nearly: rotating filler drew from the standing pool, so a headline could
+    // exit one URL and re-enter under another in the same hour — and Scene 2, the scene whose whole
+    // job is to demonstrate the diff, printed a contradiction. URL-keyed identity was behaving
+    // correctly; the fixture was lying about the input.
+    for (const outlet of DEMO_OUTLETS) {
+      const series = captures
+        .filter((c) => c.snapshot.source === outlet.source)
+        .map((c) => c.snapshot)
+        .sort((a, b) => a.captured_at.localeCompare(b.captured_at));
+      for (let i = 1; i < series.length; i += 1) {
+        const previous = series[i - 1];
+        const current = series[i];
+        if (previous === undefined || current === undefined) continue;
+        const diff = diffCaptures(previous, current);
+        const added = new Set(diff.added.map((change) => change.headline));
+        const contradictions = diff.removed.filter((change) => added.has(change.headline));
+        expect(
+          contradictions,
+          `${outlet.source} ${previous.captured_at} → ${current.captured_at}`,
+        ).to.deep.equal([]);
+      }
+    }
   });
 
   it('is deterministic', () => {

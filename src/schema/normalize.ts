@@ -125,6 +125,38 @@ function coercePosition(value: unknown, fallback: number): number {
   return fallback;
 }
 
+/** Whether the collector supplied a usable rank of its own, as opposed to us falling back. */
+export function hasExplicitPosition(raw: RawStoryRecord): boolean {
+  return coercePosition(raw.position, 0) !== 0;
+}
+
+/**
+ * House promotion, detected conservatively — and narrowed by adversarial review.
+ *
+ * A false positive here demotes a real story from the lead, which is worse than letting the
+ * occasional promo through. The first draft matched bare imperatives ("listen live", "follow us",
+ * "download the app") and a review panel demonstrated each demoting real journalism: NPR headlines
+ * breaking coverage as "Listen live: …", and "Follow us into the tunnels beneath Gaza" is a story.
+ * So the headline rule now requires the full self-referential ask ("sign up for/to …",
+ * "subscribe to/for …"), and everything else leans on URLs: the live Guardian promos all resolve to
+ * `/sign-up-to-the-hotspot`-style slugs or `/newsletters/` paths — publishers reserve those routes
+ * for plumbing, which makes them a far safer signal than headline wording. "Newsletter" alone is
+ * NOT a promo signal — "DOJ investigates newsletter startup" is news.
+ */
+const PROMO_HEADLINE = /^\s*(sign\s?up (for|to)\b|subscribe (to|for)\b|newsletter:)/i;
+const PROMO_URL_PATH =
+  /\/(newsletters?|subscribe|subscriptions?|account|support-us)([/?#]|$)|\/sign-?up(-|[/?#]|$)/i;
+
+export function classifyContentKind(headline: string, articleUrl: string): 'editorial' | 'promo' {
+  if (PROMO_HEADLINE.test(headline)) return 'promo';
+  try {
+    if (PROMO_URL_PATH.test(new URL(articleUrl).pathname)) return 'promo';
+  } catch {
+    // An unparseable URL cannot vote either way.
+  }
+  return 'editorial';
+}
+
 /**
  * Normalize one raw record. Returns `null` when the record cannot be a story.
  *
@@ -164,6 +196,7 @@ export function normalizeRecord(
     story_type: coerceStoryType(raw.story_type),
     is_lead: position === 1,
     prominence_tier: prominenceTierForPosition(position),
+    content_kind: classifyContentKind(headline, articleUrl),
   });
 }
 
@@ -192,7 +225,7 @@ export function normalizeCapture(
   rawRecords: readonly RawStoryRecord[],
   context: CaptureContext,
 ): NormalizedCapture {
-  const bestByUrl = new Map<string, StorySnapshotRecord>();
+  const bestByUrl = new Map<string, { record: StorySnapshotRecord; explicitPosition: boolean }>();
   const homepageUrl = normalizeArticleUrl(context.homepage_url);
   // The vocabulary is recorded from the rows as received (post-alias, so canonical names appear
   // alongside the originals they were mapped from — the originals are preserved by design, and
@@ -208,6 +241,7 @@ export function normalizeCapture(
     rejected_self_link: 0,
     rejected_upstream_error: 0,
     raw_fields: [...vocabulary].sort((a, b) => a.localeCompare(b)),
+    positions_from_collector: 0,
   };
 
   rawRecords.forEach((raw, index) => {
@@ -238,22 +272,32 @@ export function normalizeCapture(
     const existing = bestByUrl.get(record.article_url);
     if (existing !== undefined) diagnostics.collapsed_duplicates += 1;
     // First appearance wins: the hero placement is the one that reflects editorial intent.
-    if (existing === undefined || record.position < existing.position) {
-      bestByUrl.set(record.article_url, record);
+    if (existing === undefined || record.position < existing.record.position) {
+      bestByUrl.set(record.article_url, { record, explicitPosition: hasExplicitPosition(raw) });
     }
   });
 
-  const records = [...bestByUrl.values()]
-    .sort((a, b) => a.position - b.position)
-    .map((record, index) => {
-      const position = index + 1;
-      return {
-        ...record,
-        position,
-        is_lead: position === 1,
-        prominence_tier: prominenceTierForPosition(position),
-      };
-    });
+  // The lead is the first EDITORIAL story, not merely rank 1: a newsletter signup card at the top
+  // of the page keeps its rank (it really does occupy that slot) but must not become "the day's
+  // most important story". If every record is a promo, rank 1 stays the lead — an honest fallback.
+  const ranked = [...bestByUrl.values()].sort((a, b) => a.record.position - b.record.position);
+  const leadIndex = Math.max(
+    0,
+    ranked.findIndex((entry) => entry.record.content_kind === 'editorial'),
+  );
+  // Counted over the SURVIVING records, not the raw rows: the field documents how many of this
+  // capture's final ranks came from the collector, so duplicates collapsed away must not inflate it
+  // past records.length — that would break the audit it exists to provide.
+  diagnostics.positions_from_collector = ranked.filter((entry) => entry.explicitPosition).length;
+  const records = ranked.map((entry, index) => {
+    const position = index + 1;
+    return {
+      ...entry.record,
+      position,
+      is_lead: index === leadIndex,
+      prominence_tier: prominenceTierForPosition(position),
+    };
+  });
 
   return { records, diagnostics };
 }
@@ -269,6 +313,10 @@ export function normalizeRecords(
 export interface CaptureMeta {
   collector_id: string;
   screenshot_path: string | null;
+  /** The tick boundary this capture belongs to. Null for one-off manual captures. */
+  scheduled_for?: string | null;
+  /** When the collector returned. With `captured_at` (fetch start), bounds the observation. */
+  capture_completed_at?: string | null;
 }
 
 /** Build a snapshot and keep the rejection breakdown that produced it. */
@@ -286,6 +334,8 @@ export function buildCapture(
     captured_at: context.captured_at,
     collector_id: meta.collector_id,
     screenshot_path: meta.screenshot_path,
+    scheduled_for: meta.scheduled_for ?? null,
+    capture_completed_at: meta.capture_completed_at ?? null,
     diagnostics,
     records,
   });

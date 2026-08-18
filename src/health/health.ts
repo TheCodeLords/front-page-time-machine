@@ -360,6 +360,7 @@ export function diagnosticsFor(capture: CaptureSnapshot): CaptureDiagnostics {
       rejected_self_link: 0,
       rejected_upstream_error: 0,
       raw_fields: [],
+      positions_from_collector: 0,
     }
   );
 }
