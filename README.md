@@ -1,17 +1,24 @@
 # Front Page Time Machine
 
-**A memory of what the public web cared about.**
+**The web forgets. Every homepage overwrites itself, and the state it was in an hour ago is
+preserved nowhere. This project is a memory of what the public web cared about.**
 
 Built for [Into the Scrape-Verse](https://www.wemakedevs.org/hackathons/scrape-verse) (Bright Data ×
 WeMakeDevs, Aug 17–23 2026).
 
+**▶ Live timeline:** <https://thecodelords.github.io/front-page-time-machine/timeline.html> —
+the archive as an interactive page, no setup. Regenerated and pushed as the archive grows.
+
 We capture the **front pages** of major public news homepages every hour and reconstruct how the news
 cycle moved: what appeared, what was buried, what led for nine hours, and what one outlet never ran
-at all.
+at all. Articles have archives; the front page — a ranked, timestamped statement of what a newsroom
+thought mattered — has none. We build that missing layer, and news is the first domain because
+editorial placement is the fastest-overwriting public state there is.
 
 ```
 npm run demo        # the whole product on synthetic data — no account needed
-npm run watch       # the hourly collector: capture on the hour, heal what stays broken
+npm run watch       # the hourly collector: capture, judge, and start repairs for what stays
+                    # broken (approval-gated by default; --autonomous commits them)
 npm run capture     # one real capture of every outlet that has a collector
 npm run diff -- npr # what changed on that front page since the previous capture
 npm run story       # cluster everything captured and trace how stories spread
@@ -167,8 +174,27 @@ The loop, in [`src/heal/run-heal.ts`](src/heal/run-heal.ts):
 
 ```
 run → health verdict → DEGRADED ×2 → heal (stops at approval gate)
-    → approve → RE-RUN AND COUNT → RECOVERED
+    → fptm approve <source> → commit → RE-RUN → HEALTH ENGINE ON THE RERUN
+                                                  ├─ HEALTHY   → RECOVERED
+                                                  └─ otherwise → committed but UNVERIFIED (still DEGRADED)
 ```
+
+Gated is the default and the gate has a completion path in code: `npm run approve -- <source>`
+commits the pending fix and immediately verifies it. `--autonomous` runs the same sequence without
+stopping. Either way the verification is judged against the outlet's **last known-HEALTHY
+baseline, frozen at detection time** — not the trailing captures, which by verification time
+contain the outage itself and would grade a still-broken rerun against a broken "normal" (and a
+genuinely fixed one as suspiciously large). And if the verification rerun itself fails after the
+commit, the episode says exactly that — committed but unverified — never "heal failed, the old
+collector still works", because it doesn't anymore.
+
+**RECOVERED is the health engine's word, not the API's.** The verification rerun is normalized and
+judged by `computeHealth` — the same signals, against the same stored baseline that triggered the
+heal — and only a HEALTHY verdict resolves the episode as recovered. A heal whose rerun still fails
+resolves as _committed but unverified_: the fix shipped (that part is honest too — `approved` stays
+true) and the episode records exactly which signals still fail (`health_after` in the ledger).
+Counting rows cannot do this job: a "successful" heal can return thirty rows of navigation links,
+and only the signals can tell.
 
 The last step is the one most demos skip — and running a real heal proved why it cannot be skipped.
 
@@ -184,7 +210,7 @@ a field rename nobody asked for. Full evidence in
 
 So `preview_result` does not reliably describe the committed collector, and `status: "done"` does not
 mean the data changed. A pipeline that trusts either one will report a successful repair and quietly
-ship an archive missing three columns. Ours re-runs and counts.
+ship an archive missing three columns. Ours re-runs and judges the result with its own health engine.
 
 **We have now run three heals against three live collectors. One delivered.** All three returned
 `status: "done"` with `user_approval` in the step list, and only re-running told them apart:
@@ -242,8 +268,14 @@ Four decisions in [`src/schedule/`](src/schedule/) that are not obvious until yo
 **Ticks land on wall-clock boundaries, not now-plus-an-hour.** A capture that takes 90 seconds would
 push the next to :01:30, then :03:00, and by tomorrow the series is 20 minutes out of phase. That
 quietly ruins both things the project exists to do — cross-outlet comparison needs every outlet
-sampled at the same instant, and "what changed in an hour" must not silently become 68 minutes.
-Aligning makes a late run lose its lateness instead of accumulating it.
+sampled inside the same narrow window, and "what changed in an hour" must not silently become 68
+minutes. Aligning makes a late run lose its lateness instead of accumulating it.
+
+**A tick is a capture _window_, and the archive says so.** Six outlets are fetched serially, so
+"the 14:00 tick" spans a few minutes of wall clock. Every capture records three timestamps —
+`scheduled_for` (the tick boundary), `captured_at` (this outlet's fetch start) and
+`capture_completed_at` (when the collector returned) — so the data distinguishes **first observed**
+from first published, and no claim of "the same instant" is ever made that the archive cannot back.
 
 **Missed ticks are counted, never backfilled.** When a laptop sleeps through four captures, running
 them late would file the _current_ front page under a past hour. The gap is reported as a gap. An
@@ -270,10 +302,25 @@ asserted in milliseconds instead of hours.
 Real publishers redesign on their schedule, not the demo's. [`mock/`](mock/README.md) holds **The
 Meridian Dispatch** — one clearly-labeled synthetic front page in two layouts: v1 (semantic, the
 page a collector is built against) and v2 (the hostile redesign: same stories, restructured DOM,
-build-hash class names). Host v1 publicly, build a collector, swap in v2, and the entire
-detect → debounce → heal → approve → verify loop runs for real against a break you control.
-Artifact-hosting the fixture was tested and does not work (details in the mock README); the fallback
-is `fptm demo`'s scripted break, which is always disclosed as simulated.
+build-hash class names).
+
+With GitHub Pages enabled on this repo, the fixture is live at a real, scrapeable URL:
+<https://thecodelords.github.io/front-page-time-machine/mock/homepage-v1.html>. The drill is a
+controlled real-world redesign, disclosed as controlled:
+
+```
+1. brightdata scraper create <fixture URL> "$(cat collectors/homepage-description.txt)"
+2. fptm capture twice                → HEALTHY baseline
+3. commit v2's markup over homepage-v1.html (same path → same URL; Pages redeploys in ~1 min)
+4. fptm capture twice                → health flags the break, debounce satisfied
+5. fptm heal meridian                → Bright Data proposes a fix, stops at the approval gate
+6. fptm approve meridian             → commit → rerun → health engine → RECOVERED, or honestly not
+```
+
+This complements — not replaces — the three live-publisher heals in §6: the fixture proves the loop
+end-to-end against a redesign we control; the live heals prove it against publishers we don't.
+The fallback when nothing can be hosted is `fptm demo`'s scripted break, always disclosed as
+simulated.
 
 ## 6d. The timeline UI
 
@@ -282,8 +329,11 @@ JS, data embedded as JSON, zero network requests, works from a double-click on a
 internet. A time scrubber moves across capture moments (grouped by gap, not by a wall-clock grid,
 so six serially-fetched outlets read as one editorial moment); each outlet renders as a front-page
 card with rank badges and ▲▼/NEW movement against its previous capture; a divergence strip shows
-the hours the outlets disagreed most, clickable to jump; clicking any story highlights the same
-story everywhere it appeared and shows its propagation table.
+the hours the outlets disagreed most, clickable to jump; a "what changed" strip sums arrivals,
+departures and rank moves against the previous stop; clicking any story highlights the same
+story everywhere it appeared and shows its propagation table. The Repairs panel renders the heal
+ledger — each episode expandable to its generated prompt, per-phase timing, and the health engine's
+verdict on the verification rerun ("rerun verified HEALTHY" or "rerun still DEGRADED").
 
 Clustering and entropy are computed at build time by the same tested functions `fptm story` uses —
 the embedded JavaScript only selects and displays, so the page can never disagree with the CLI about
@@ -309,23 +359,36 @@ breaking change, the suite goes red.
 
 ```
 source · source_name · captured_at · capture_id · section · headline · article_url
-summary · image_url · published_at · position · story_type · is_lead · prominence_tier
+summary · image_url · published_at · position · story_type · is_lead · prominence_tier · content_kind
 ```
 
-Three rules do the heavy lifting:
+Four rules do the heavy lifting:
 
 **Dedupe by URL, never by headline.** Live blogs rewrite their headline hourly against a fixed URL.
 Headline-keyed identity would either destroy that churn or explode one story into twelve. Instead the
 churn is captured as its own signal (`headline_rewrites` in the diff) — a story being actively
 reworked is editorial attention made visible.
 
-**Prominence is ordinal, never visual.** `lead` (rank 1) / `above_fold` (2–5) / `below`. Font sizes and
-hero modules are not comparable across outlets, so any pixel-weight score turns the methodology into
-the argument. Rank within one outlet's own page is a fact.
+**Prominence is ordinal, never visual — and the claim is precisely "observed homepage rank".**
+`lead` / `above_fold` (2–5) / `below`. Font sizes and hero modules are not comparable across
+outlets, so any pixel-weight score turns the methodology into the argument. Rank within one outlet's
+own page is a fact — specifically, the story's ordinal within the collector's extracted story
+sequence: the publisher's own `position` field when the collector returns one, document order
+otherwise. Which of the two produced each capture's ranks is persisted
+(`positions_from_collector` in diagnostics), so the provenance of every rank is auditable. What we
+deliberately do **not** claim is pixel prominence — "rank 3" means third in the observed sequence,
+not "third-largest headline".
 
 **Ranks are re-ranked contiguous after dedupe.** A homepage links its lead from both the hero and a
 sidebar rail, so raw positions have holes once deduped — and a hole is exactly what the
 position-integrity check reads as damage.
+
+**The lead is the first _editorial_ story, not merely rank 1.** Found live: the Guardian's top slot
+was a newsletter signup card — a perfectly valid record that would have made a signup box the day's
+most important story. `classifyContentKind` marks self-referential promos (conservatively: "Sign up
+for…"-style headlines and `/newsletters/`-style URL paths — news _about_ newsletters stays
+editorial). Promos keep their rank, because they really do occupy that slot; they are only barred
+from being the lead, which is the placement claim everything downstream stands on.
 
 ## 9. How snapshots are stored
 
@@ -348,8 +411,15 @@ A model would cluster better on hard cases, but a demo whose grouping changes be
 same data cannot be tested and cannot be trusted on stage. The seam for an embedding pass is the
 similarity function; everything downstream is unchanged.
 
+**Every cluster carries a confidence score** — the weakest member's best link into the group
+(same-URL ties score 1; otherwise headline containment), so a chained merge cannot hide behind its
+strongest pair. `fptm story` prints it beside each multi-outlet story: the honest answer to "how
+sure are you these are one story?" is a number derived from the same arithmetic that grouped them.
+
 Propagation then reports, per outlet: first seen, last seen, peak rank, captures spent as lead — and
-`never_covered`, the outlets that never carried it at all.
+`never_covered`, the outlets that never carried it at all. Timing language throughout is
+**first observed** — the archive knows when _we_ saw a story, which bounds but does not equal when
+the publisher shipped it.
 
 ### The bias discipline
 
@@ -458,7 +528,7 @@ facts coexisting is exactly what the diagnostics block exists to make visible.
 
 ### What the archive can already answer
 
-From 1,496 records across six outlets, `npm run story` reconstructs propagation with no model in the
+From 6,600+ records across six outlets (and growing hourly), `npm run story` reconstructs propagation with no model in the
 loop and no editorialising — placement and timing only:
 
 ```
@@ -529,8 +599,16 @@ of those is necessarily vaguer.
 
 Two more found by running six live collectors rather than one. **Promotional cards are extracted as
 stories**: the Guardian's rank-1 slot came back as "Sign up to The Hotspot", a newsletter signup that
-genuinely occupies that position on the page — so `is_lead` is currently "the top thing on the page",
-not "the top story". **One capture was corrupted by our own normalizer** and has been withdrawn to
+genuinely occupies that position on the page. This is what motivated `content_kind` (§8): the promo
+keeps its rank, and `is_lead` now passes over it to the first editorial story. The residual
+limitation is the classifier itself — it is deliberately conservative, so an unusually-worded promo
+can still slip through to the lead.
+
+**The known blind spot is staleness.** A frozen collector — one serving the same cached page every
+hour — passes every signal indefinitely: right count, right fields, contiguous ranks. The
+cross-outlet design is the working mitigation (five front pages churning while one never changes is
+visible in every diff), and an unchanged-capture streak signal is the planned fix.
+**One capture was corrupted by our own normalizer** and has been withdrawn to
 [`snapshots/_quarantine/`](snapshots/_quarantine/README.md) rather than deleted; the cause and the
 signal that exposed it are written up there.
 
@@ -546,10 +624,13 @@ code with tests.
 ## Test results
 
 ```
-227 passing
-Statements  94.28%   Branches  86.42%   Functions  92.88%   Lines  94.28%
+291 passing
+Statements  95.4%   Branches  86.3%   Functions  91.2%   Lines  95.4%
 typecheck ✓   lint ✓   format ✓
 ```
+
+(Snapshot as of 2026-08-18; the suite grows with the code — run `npm run verify` for the live
+numbers, and expect them to be at least these.)
 
 No network, no API key, no Bright Data account. `src/cli/**` is excluded from coverage — it is the I/O
 shell, and everything it orchestrates is tested directly.
